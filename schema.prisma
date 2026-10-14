@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PaymentStatus {
+  PENDING
+  FAILED
+  SUCCESS
+  RECOVERED
+}
+
+enum RecoveryAction {
+  PAYMENT_REMINDER
+}
+
+enum RecoveryStatus {
+  PENDING
+  LINK_CREATED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+model Customer {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  name               String
+  email              String
+  subscriptionAmount Int
+  subscriptionStatus String   @default("ACTIVE")
+  createdAt          DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  payments  Payment[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+}
+
+model Workspace {
+  id        String     @id @default(cuid())
+  name      String
+  apiKey    String     @unique
+  createdAt DateTime   @default(now())
+  customers Customer[]
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  customerId    String
+  /// Stored in whole rupees. Razorpay receives the converted paise value.
+  amount        Int
+  currency      String        @default("INR")
+  status        PaymentStatus
+  failureReason String?
+  attemptNumber Int           @default(1)
+  createdAt     DateTime      @default(now())
+
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  recoveries Recovery[]
+  auditLogs  AuditLog[]
+
+  @@index([status, createdAt])
+}
+
+model Recovery {
+  id                String         @id @default(cuid())
+  paymentId         String
+  action            RecoveryAction
+  reason            String?
+  status            RecoveryStatus
+  recoveredAmount   Int            @default(0)
+  provider          String?
+  paymentLinkId     String?        @unique
+  paymentLinkUrl    String?
+  paymentLinkStatus String?
+  externalPaymentId String?        @unique
+  expiresAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime       @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId, status])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  paymentId String
+  event     String
+  details   String?
+  createdAt DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+}
+
+model WebhookEvent {
+  id            String    @id @default(cuid())
+  sourceId      String    @unique
+  event         String
+  paymentLinkId String?
+  payload       String
+  receivedAt    DateTime  @default(now())
+  processedAt   DateTime?
+
+  @@index([event, receivedAt])
+}
